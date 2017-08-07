@@ -1,0 +1,131 @@
+############################################################################################
+###############################Loan Repayment############################################
+
+loans = read.csv("C:/Users/ApoorvaS/Documents/R/data files/loans.csv")
+summary(loans)
+
+#Analysing missing values
+loans$purpose = as.factor(loans$purpose) 
+missingRows = subset(loans, is.na(revol.util) == T)
+missingRows1 = subset(loans, is.na(delinq.2yrs) == T)
+
+table(loans$purpose=="all_other")
+View(missingRows1)
+#it can be noticed that 29 rows that have most missing values belong to "all_others" loan purpose. Since, missing values contribute only
+#1% of that loan category, it is acceptable to omit those rows.
+
+loans.1 = subset(loans, is.na(delinq.2yrs) == F)
+View(loans.1)
+summary(loans.1)
+
+#analyse revolving utilization rate missing values
+missingRows2 = subset(loans.1, is.na(revol.util)==T)
+View(missingRows2)
+missingRows2$revol.util = mean(loans.1$revol.util)
+
+hist(loans.1$revol.util)       
+summary(loans.1$revol.util)
+#the data is uniformly distritbued, we can try replacing the missing values with mean and then check data distribution again
+loans.1$revol.util = replace(loans.1$revol.util, is.na(loans.1$revol.util)==TRUE, mean(loans.1$revol.util,na.rm=T))
+hist(loans.1$revol.util)  
+#data distribution did not change much
+
+summary(loans.1$revol.util)
+summary(loans.1)
+
+#divide data into Train and Test set
+library(caTools)
+split = sample.split(loans.1$not.fully.paid, SplitRatio = 0.65)
+ModTrain = subset(loans.1,split == T)
+ModTest = subset(loans.1,split == F)
+summary(ModTrain)
+#before buidling models lets check multi-collinearity 
+attach(loans.1)
+cor(loans.1[,-2])
+
+#their seems to be a strong correlation between fico and interest rate so lets build 3 different models- 1.Full 2.-fico, 3.-interest rate
+
+
+#############################LOGISTIC REGRESSION###############
+
+
+modFull = glm(not.fully.paid ~ . , data = ModTrain, family = binomial)
+summary(modFull)
+#fico is significant but int.rate is not
+ModFico = glm(not.fully.paid ~ . -fico, data = ModTrain, family = binomial)
+summary(ModFico)
+#interest rate becomes a strong contributor
+ModIntR = glm(not.fully.paid ~ . -int.rate, data = ModTrain, family = binomial)
+summary(ModIntR)
+#fico becomes a strong contributor
+cor(not.fully.paid, fico)
+cor(not.fully.paid, int.rate)
+#we can select interest rate since it has stronger correlation with the dependent variable than fico
+# so we can go ahead with model = modfico
+
+ModFico2 = glm(not.fully.paid ~ . -fico-dti, data = ModTrain, family = binomial)
+summary(ModFico2)
+
+ModFico3 = glm(not.fully.paid ~ credit.policy + I(purpose == "credit_card") + I(purpose == "debt_consolidation") 
+               +I(purpose == "home_improvement") + I(purpose == "major_purchase") + I(purpose == "small_business") +I(purpose == "educational") 
+               + int.rate + installment + log.annual.inc + days.with.cr.line + revol.bal + revol.util + inq.last.6mths + delinq.2yrs + pub.rec, data = ModTrain, family = binomial)
+summary(ModFico3)
+
+ModFico4 = glm(not.fully.paid ~ credit.policy + I(purpose == "credit_card") + I(purpose == "debt_consolidation") 
+               +I(purpose == "home_improvement") + I(purpose == "major_purchase") + I(purpose == "small_business")  
+               + int.rate + installment + log.annual.inc + days.with.cr.line + revol.bal + revol.util + inq.last.6mths + delinq.2yrs + pub.rec, data = ModTrain, family = binomial)
+summary(ModFico4)
+
+ModFico5 = glm(not.fully.paid ~ credit.policy + I(purpose == "credit_card") + I(purpose == "debt_consolidation") 
+                + I(purpose == "major_purchase") + I(purpose == "small_business")  
+               + int.rate + installment + log.annual.inc + days.with.cr.line + revol.bal + revol.util + inq.last.6mths + delinq.2yrs + pub.rec, data = ModTrain, family = binomial)
+summary(ModFico5)
+
+ModFico6 = glm(not.fully.paid ~ credit.policy + I(purpose == "credit_card") + I(purpose == "debt_consolidation") 
+               + I(purpose == "major_purchase") + I(purpose == "small_business")  
+               + int.rate + installment + log.annual.inc + days.with.cr.line + revol.bal + revol.util + inq.last.6mths  + pub.rec, data = ModTrain, family = binomial)
+summary(ModFico6)
+
+ModFico7 = glm(not.fully.paid ~ credit.policy + I(purpose == "credit_card") + I(purpose == "debt_consolidation") 
+               + I(purpose == "major_purchase") + I(purpose == "small_business")  
+               + int.rate + installment + log.annual.inc  + revol.bal + revol.util + inq.last.6mths  + pub.rec, data = ModTrain, family = binomial)
+summary(ModFico7)
+
+BIC(ModFico2)
+BIC(ModFico3)
+BIC(ModFico4)
+BIC(ModFico5)
+BIC(ModFico6)
+BIC(ModFico7)
+#AIC & BIC both are improving 
+
+
+#prediction 
+
+ModFico7.pred = predict(ModFico7, newdata = ModTest, type = "response")
+
+
+#model evaluation
+
+#baseline accuracy
+
+table(ModTest$not.fully.paid)
+baselineAccuracy = 2807/nrow(ModTest)
+
+#83.96%, our model should beat this accuracy
+
+#model accuracy at threshold of 0.5
+table(ModTest$not.fully.paid, ModFico7.pred>=0.5)
+ModelAccuracy = (2794+14)/nrow(ModTest)
+#83.996%
+
+#threshlod of 0.7
+table(ModTest$not.fully.paid, ModFico7.pred>=0.7)
+ModelAccuracy = (2805+1)/nrow(ModTest)
+#83.93%
+
+#lets check model AUC
+library(ROCR)
+rocr.pred = prediction(ModFico7.pred, ModTest$not.fully.paid)
+auc = as.numeric(performance(rocr.pred, "auc")@y.values)
+#68.7% is the confidence that our model will correctly differentiate between loan repayed and not fully repayed customers
