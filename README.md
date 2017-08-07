@@ -19,4 +19,4 @@ To predict this dependent variable, we will use the following independent variab
     delinq.2yrs: The number of times the borrower had been 30+ days past due on a payment in the past 2 years.
     pub.rec: The borrower's number of derogatory public records (bankruptcy filings, tax liens, or judgments).
 
-*This dataset was picked up from a amchine learning course ANALYTICS EDGE but the code and approach is all mine.
+*This dataset was picked up from a machine learning course ANALYTICS EDGE but the code and approach is all mine.
