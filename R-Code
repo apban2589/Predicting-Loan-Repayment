@@ -129,3 +129,111 @@ library(ROCR)
 rocr.pred = prediction(ModFico7.pred, ModTest$not.fully.paid)
 auc = as.numeric(performance(rocr.pred, "auc")@y.values)
 #68.7% is the confidence that our model will correctly differentiate between loan repayed and not fully repayed customers
+
+
+
+############################################################################################################
+####################Method2- MULTIPLE IMPUTATION###########################################################
+attach(loans)
+
+library(mice)
+library(lattice)
+
+m = md.pattern(loans)
+
+#excluding the dependent variable
+var.impute = setdiff(names(loans), "not.fully.paid")
+
+impute.1 = complete(mice(loans[var.impute]))
+
+loans[var.impute] = impute.1
+summary(loans)
+
+#divide data into Train and Test set
+library(caTools)
+split = sample.split(loans$not.fully.paid, SplitRatio = 0.65)
+ModTrain = subset(loans,split == T)
+ModTest = subset(loans,split == F)
+summary(ModTrain)
+#before buidling models lets check multi-collinearity 
+attach(loans)
+cor(loans[,-2])
+#their seems to be a strong correlation between fico and interest rate so lets build 3 different models- 1.Full 2.-fico, 3.-interest rate
+
+ModTrain$purpose
+#############################LOGISTIC REGRESSION###############
+
+
+modFull = glm(not.fully.paid ~ . , data = ModTrain, family = binomial)
+summary(modFull)
+#home_improvement is significant 
+ModHi = glm(not.fully.paid ~ credit.policy + I(purpose == "credit_card") + I(purpose == "debt_consolidation") 
+             + I(purpose == "major_purchase") + I(purpose == "small_business") +I(purpose == "educational") 
+            + int.rate + installment + log.annual.inc + days.with.cr.line + revol.bal + revol.util + inq.last.6mths + delinq.2yrs + pub.rec, data = ModTrain, family = binomial)
+summary(ModHi)
+
+#removing delinq.2yrs
+
+ModD2 = glm(not.fully.paid ~ credit.policy + I(purpose == "credit_card") + I(purpose == "debt_consolidation") 
+            + I(purpose == "major_purchase") + I(purpose == "small_business") +I(purpose == "educational") 
+            + int.rate + installment + log.annual.inc + days.with.cr.line + revol.bal + revol.util + inq.last.6mths  + pub.rec, data = ModTrain, family = binomial)
+summary(ModD2)
+
+#removing days with credit line
+ModDc = glm(not.fully.paid ~ credit.policy + I(purpose == "credit_card") + I(purpose == "debt_consolidation") 
+            + I(purpose == "major_purchase") + I(purpose == "small_business") +I(purpose == "educational") 
+            + int.rate + installment + log.annual.inc  + revol.bal + revol.util + inq.last.6mths  + pub.rec, data = ModTrain, family = binomial)
+summary(ModDc)
+
+#removing educational
+
+ModEdu = glm(not.fully.paid ~ credit.policy + I(purpose == "credit_card") + I(purpose == "debt_consolidation") 
+            + I(purpose == "major_purchase") + I(purpose == "small_business")  
+            + int.rate + installment + log.annual.inc  + revol.bal + revol.util + inq.last.6mths  + pub.rec, data = ModTrain, family = binomial)
+summary(ModEdu)
+#removing major purchase
+
+ModMaj.pur = glm(not.fully.paid ~ credit.policy + I(purpose == "credit_card") + I(purpose == "debt_consolidation") 
+             + I(purpose == "small_business")  
+             + int.rate + installment + log.annual.inc  + revol.bal + revol.util + inq.last.6mths  + pub.rec, data = ModTrain, family = binomial)
+summary(ModMaj.pur)
+
+BIC(modFull)
+BIC(ModHi)
+BIC(ModD2)
+BIC(ModDc)
+BIC(ModEdu)
+BIC(ModMaj.pur)
+
+#BIC improved along with AICs with every new model
+
+
+#prediction 
+
+ModMaj.pur.pred = predict(ModMaj.pur, newdata = ModTest, type = "response")
+
+
+#model evaluation
+
+#baseline accuracy
+
+table(ModTest$not.fully.paid)
+baselineAccuracy = 2807/nrow(ModTest)
+
+#83.96%, our model should beat this accuracy
+
+#model accuracy at threshold of 0.5
+table(ModTest$not.fully.paid, ModMaj.pur.pred>=0.5)
+ModelAccuracy = (2803+14)/nrow(ModTest)
+#84.014%
+
+#threshlod of 0.7
+table(ModTest$not.fully.paid, ModMaj.pur.pred>=0.7)
+ModelAccuracy = (2815+1)/nrow(ModTest)
+#83.98%
+
+#lets check model AUC
+library(ROCR)
+rocr.pred = prediction(ModMaj.pur.pred, ModTest$not.fully.paid)
+auc = as.numeric(performance(rocr.pred, "auc")@y.values)
+#68.13% is the confidence that our model will correctly differentiate between loan repayed and not fully repayed customers
